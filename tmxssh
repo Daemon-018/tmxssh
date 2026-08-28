@@ -23,15 +23,64 @@ TMXSSH_HOME="${TMXSSH_HOME:-$HOME/.tmxssh}"
 CONF_FILE="$TMXSSH_HOME/config"
 DEFAULT_PORT=8022
 
-BOLD=$'\033[1m'; DIM=$'\033[2m'; GREEN=$'\033[32m'; YELLOW=$'\033[33m'
-RED=$'\033[31m'; CYAN=$'\033[36m'; RESET=$'\033[0m'
+# ---------- cyberpunk theme --------------------------------------------------
+C_RESET=$'\033[0m'
+C_BOLD=$'\033[1m'
+C_DIM=$'\033[2m'
+C_GREEN=$'\033[38;5;48m'     # neon green  #00ff9f
+C_CYAN=$'\033[38;5;51m'      # cyber cyan  #00e5ff
+C_PINK=$'\033[38;5;206m'     # synth pink  #ff3bd4
+C_AMBER=$'\033[38;5;227m'    # amber       #ffd75f
+C_RED=$'\033[38;5;203m'      # volt red    #ff5f5f
+C_PURPLE=$'\033[38;5;141m'   # neon purple #af87ff
+C_BG=$'\033[48;5;235m'       # dark slab   #262626
+C_GREEN_BG=$'\033[48;5;28m'  # green fill
+C_MAGENTA=$'\033[95m'
+
+BOLD="$C_BOLD"; DIM="$C_DIM"; GREEN="$C_GREEN"; YELLOW="$C_AMBER"
+RED="$C_RED"; CYAN="$C_CYAN"; RESET="$C_RESET"
 
 # ---------- helpers ----------------------------------------------------------
 say(){ printf '%s\n' "$*"; }
-ok(){  printf '%s[ OK ]%s %s\n' "$GREEN" "$RESET" "$*"; }
-warn(){ printf '%s[ WARN ]%s %s\n' "$YELLOW" "$RESET" "$*"; }
-err(){ printf '%s[ ERROR ]%s %s\n' "$RED" "$RESET" "$*" >&2; }
+ok(){  printf '%s[ OK ]%s %s%s%s\n' "$C_GREEN" "$C_RESET" "$C_PINK" "$*" "$C_RESET"; }
+warn(){ printf '%s[ WARN ]%s %s%s%s\n' "$C_AMBER" "$C_RESET" "$C_DIM" "$*" "$C_RESET"; }
+err(){ printf '%s[ ERROR ]%s %s%s%s\n' "$C_RED" "$C_RESET" "$C_PINK" "$*" "$C_RESET" >&2; }
 die(){ err "$*"; exit 1; }
+
+# ---------- auto-adjust to screen --------------------------------------------
+# Detect terminal width once. Falls back to a sane default when not a TTY
+# (piped output, cron, tests) so output never depends on the environment.
+TERM_COLS="${COLUMNS:-}"
+if [ -z "$TERM_COLS" ]; then
+  TERM_COLS=$(tput cols 2>/dev/null) \
+    || TERM_COLS=$(stty size 2>/dev/null | awk '{print $2}') \
+    || TERM_COLS=80
+fi
+[ "$TERM_COLS" -ge 40 ] 2>/dev/null || TERM_COLS=80
+[ "$TERM_COLS" -le 220 ] 2>/dev/null || TERM_COLS=220
+
+# repeat a glyph N times (string builder — portable)
+rep(){ local i s=""; for ((i=0;i<$2;i++)); do s+="$1"; done; printf '%s' "$s"; }
+
+# dividers stretch to screen width
+hrule(){  printf '%s%s%s\n' "$C_CYAN" "$(rep '─' "$TERM_COLS")" "$C_RESET"; }
+hrule2(){ printf '%s%s%s\n' "$C_PINK" "$(rep '═' "$TERM_COLS")" "$C_RESET"; }
+
+# banner: neon tmxssh logo + attribution (centers to screen width)
+pad(){ local n=$1; [ "$n" -lt 0 ] && n=0; rep ' ' "$n"; }
+banner(){
+  local w=$((TERM_COLS/2)) p p2
+  p=$((w-26)); p2=$((w-30))
+  echo ""
+  printf '%s%s%s\n' "$C_GREEN" "$(pad "$p")"    "    ████████╗███╗   ███╗██╗  ██╗███████╗███████╗██╗  ██╗"
+  printf '%s%s%s\n' "$C_GREEN" "$(pad "$p")"    "    ╚══██╔══╝████╗ ████║╚██╗██╔╝██╔════╝██╔════╝██║  ██║"
+  printf '%s%s%s\n' "$C_GREEN" "$(pad "$p")"    "       ██║   ██╔████╔██║ ╚███╔╝ ███████╗███████╗███████║"
+  printf '%s%s%s\n' "$C_GREEN" "$(pad "$p")"    "       ██║   ██║╚██╔╝██║ ██╔██╗ ╚════██║╚════██║██╔══██║"
+  printf '%s%s%s\n' "$C_GREEN" "$(pad "$p")"    "       ██║   ██║ ╚═╝ ██║██╔╝ ██╗███████║███████║██║  ██║"
+  printf '%s%s%s\n' "$C_GREEN" "$(pad "$p")"    "       ╚═╝   ╚═╝     ╚═╝╚═╝  ╚═╝╚══════╝╚══════╝╚═╝  ╚═╝"
+  printf '%s%s%s%s%s\n' "$C_DIM" "$(pad "$p2")" ":: OPENSSH NEON SERVER v1.0 ::" "$C_RESET" "  $C_PURPLE@daemon-018$C_RESET"
+  echo ""
+}
 
 get_user(){ whoami; }
 
@@ -120,6 +169,7 @@ cmd_start(){
   requires_openssh
   ensure_key
 
+  banner
   load_config
   SSH_PORT="${SSH_PORT:-$DEFAULT_PORT}"
   write_sshd_config_port
@@ -152,18 +202,19 @@ cmd_stop(){
 cmd_status(){
   load_config
   SSH_PORT="${SSH_PORT:-$DEFAULT_PORT}"
-  echo "┌───────────────────────────────────────────────"
-  echo "│  tmxssh status"
-  echo "├───────────────────────────────────────────────"
+  hrule
+  printf '%s[ %sSTATUS%s ]%s %stmxssh%s\n' "$C_DIM" "$C_CYAN" "$C_RESET" "$C_DIM" "$C_PINK" "$C_RESET"
+  hrule2
   if ssh_running; then
-    printf '│  Server   : %sRUNNING%s\n' "$GREEN" "$RESET"
-    printf '│  Port     : %s\n' "$(get_ssh_port)"
+    printf '%s░░%s Server   : %s● RUNNING%s\n' "$C_DIM" "$C_RESET" "$C_GREEN" "$C_RESET"
+    printf '%-12s : %s%s%s\n' 'Port' "$C_CYAN" "$(get_ssh_port)" "$C_RESET"
   else
-    printf '│  Server   : %sSTOPPED%s  (run: tmxssh start)\n' "$RED" "$RESET"
+    printf '%s░░%s Server   : %s● STOPPED%s  (tmxssh start)\n' "$C_DIM" "$C_RESET" "$C_RED" "$C_RESET"
+    printf '%-12s : %s%s%s\n' 'Port' "$C_CYAN" "$(get_ssh_port)" "$C_RESET"
   fi
-  printf '│  User     : %s\n' "$(get_user)"
-  printf '│  Key file : %s\n' "$HOME/.ssh/id_ed25519.pub"
-  echo "└───────────────────────────────────────────────"
+  printf '%-12s : %s%s%s\n' 'User' "$C_GREEN" "$(get_user)" "$C_RESET"
+  printf '%-12s : %s%s%s\n' 'Key file' "$C_DIM" "$HOME/.ssh/id_ed25519.pub" "$C_RESET"
+  hrule
 }
 
 cmd_info(){
@@ -172,18 +223,18 @@ cmd_info(){
   local user; user="$(get_user)"
 
   echo ""
-  echo "  ${BOLD}ssh is ready — connect from another device with:${RESET}"
+  printf '%s[ ACCESS GRANTED ]%s  connect from another device:\n' "$C_GREEN" "$C_RESET"
   echo ""
   local ip
   for ip in $(get_lan_ips); do
-    echo "    ${GREEN}ssh -p $SSH_PORT $user@$ip${RESET}"
+    printf '    %s$%s %s%s -p %s %s@%s%s\n' "$C_PINK" "$C_RESET" "$C_CYAN" "ssh" "$SSH_PORT" "$user" "$ip" "$C_RESET"
   done
   [ -z "$(get_lan_ips)" ] && {
-    echo "    ${YELLOW}(could not auto-detect your LAN IP — find it with: ip addr)${RESET}"
+    printf '    %s(no LAN IP detected — run: ip addr)%s\n' "$C_AMBER" "$C_RESET"
   }
   echo ""
-  echo "  ${DIM}password : the one you set with 'tmxssh setpass'${RESET}"
-  echo "  ${DIM}more     : tmxssh help${RESET}"
+  printf '%s  password   :%s the one set with `tmxssh setpass`\n' "$C_DIM" "$C_RESET"
+  printf '%s  hints      :%s tmxssh help%s · %s@daemon-018%s\n' "$C_DIM" "$C_RESET" "$C_CYAN" "$C_PURPLE" "$C_RESET"
   echo ""
 }
 
@@ -211,6 +262,7 @@ cmd_port(){
 cmd_noargs(){
   load_config
   SSH_PORT="${SSH_PORT:-$DEFAULT_PORT}"
+  banner
   if [ ! -f "$TMXSSH_HOME/.pwset" ]; then
     say "  ${CYAN}== tmxssh first-run setup ==${RESET}"
     ensure_password
@@ -252,17 +304,23 @@ PY
 }
 
 cmd_help(){
-  sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
-  echo ""
-  echo "  Commands:"
-  echo "    tmxssh            auto-start (if needed) + show connect info"
-  echo "    tmxssh start      start sshd in background + show info"
-  echo "    tmxssh stop       stop sshd"
-  echo "    tmxssh status     show running state"
-  echo "    tmxssh info       show IP/port/user to connect with"
-  echo "    tmxssh setpass    set/change SSH login password"
-  echo "    tmxssh port N     change SSH port (default 8022)"
-  echo "    tmxssh restart    restart sshd"
+  banner
+  hrule
+  printf '%s[ %sHELP%s ]%s  tmxssh — start OpenSSH on Termux, others SSH in over LAN\n' "$C_DIM" "$C_CYAN" "$C_RESET" "$C_RESET"
+  hrule2
+  printf '  %s%-12s%s  %sauto-start (if needed) + show connect info%s\n' "$C_PINK" 'tmxssh' "$C_RESET" "$C_RESET" ""
+  printf '  %s%-12s%s  %sstart sshd in background + show info%s\n' "$C_PINK" 'tmxssh start' "$C_RESET" "$C_RESET" ""
+  printf '  %s%-12s%s  %sstop sshd%s\n' "$C_PINK" 'tmxssh stop' "$C_RESET" "$C_RESET" ""
+  printf '  %s%-12s%s  %srestart sshd%s\n' "$C_PINK" 'tmxssh restart' "$C_RESET" "$C_RESET" ""
+  printf '  %s%-12s%s  %sshow running state%s\n' "$C_PINK" 'tmxssh status' "$C_RESET" "$C_RESET" ""
+  printf '  %s%-12s%s  %sshow IP/port/user to connect with%s\n' "$C_PINK" 'tmxssh info' "$C_RESET" "$C_RESET" ""
+  printf '  %s%-12s%s  %sset/change SSH login password%s\n' "$C_PINK" 'tmxssh setpass' "$C_RESET" "$C_RESET" ""
+  printf '  %s%-12s%s  %schange SSH port (default 8022)%s\n' "$C_PINK" 'tmxssh port N' "$C_RESET" "$C_RESET" ""
+  printf '  %s%-12s%s  %sshow scannable QR connect code%s\n' "$C_PINK" 'tmxssh qr' "$C_RESET" "$C_RESET" ""
+  printf '  %s%-12s%s  %sshow this help%s\n' "$C_PINK" 'tmxssh help' "$C_RESET" "$C_RESET" ""
+  hrule
+  printf '%s  crafted by %s@daemon-018%s · %shttps://github.com/Daemon-018/tmxssh%s\n' "$C_DIM" "$C_PURPLE" "$C_DIM" "$C_CYAN" "$C_RESET"
+  hrule
 }
 
 cmd_restart(){
