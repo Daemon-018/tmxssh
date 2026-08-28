@@ -10,7 +10,7 @@
 #  Installs tmxssh -> $PREFIX/bin/tmxssh  + config dir in ~/.tmxssh
 # =============================================================================
 
-REPO_URL="https://raw.githubusercontent.com/Daemon-018/tmxssh/main"
+REPO_URL="https://raw.githubusercontent.com/Daemon-018/tmxssh/refs/heads/main"
 
 BOLD=$'\033[1m'; GREEN=$'\033[32m'; YELLOW=$'\033[33m'; RED=$'\033[31m'; RESET=$'\033[0m'
 say(){ printf '%s\n' "$*"; }

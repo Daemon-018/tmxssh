@@ -29,7 +29,7 @@ device to connect.
 On **Termux**, run:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Daemon-018/tmxssh/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Daemon-018/tmxssh/refs/heads/main/install.sh | bash
 ```
 
 This installs the `tmxssh` command straight into your system path.
