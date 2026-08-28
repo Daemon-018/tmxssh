@@ -1,0 +1,288 @@
+#!/bin/bash
+# =============================================================================
+#  tmxssh  -  start an OpenSSH server on Termux so other devices
+#             (laptops, phones, tablets) can SSH INTO this device over LAN.
+#
+#  Author : Hari (Daemon-018)
+#  License: MIT  |  Free & open source
+#  Repo   : https://github.com/Daemon-018/tmxssh
+#
+#  Usage  : tmxssh            -> ensure running, show connection info
+#           tmxssh start      -> start sshd in the background
+#           tmxssh stop       -> stop sshd
+#           tmxssh status     -> show running state + info
+#           tmxssh setpass    -> set/change the SSH login password
+#           tmxssh port N     -> set SSH server port (default 8022)
+#           tmxssh info       -> show connection details (IP/port/user)
+#           tmxssh qr         -> show a QR code with the full ssh command
+#           tmxssh help       -> this help
+# =============================================================================
+
+# ---------- config -----------------------------------------------------------
+TMXSSH_HOME="${TMXSSH_HOME:-$HOME/.tmxssh}"
+CONF_FILE="$TMXSSH_HOME/config"
+DEFAULT_PORT=8022
+
+BOLD=$'\033[1m'; DIM=$'\033[2m'; GREEN=$'\033[32m'; YELLOW=$'\033[33m'
+RED=$'\033[31m'; CYAN=$'\033[36m'; RESET=$'\033[0m'
+
+# ---------- helpers ----------------------------------------------------------
+say(){ printf '%s\n' "$*"; }
+ok(){  printf '%s[ OK ]%s %s\n' "$GREEN" "$RESET" "$*"; }
+warn(){ printf '%s[ WARN ]%s %s\n' "$YELLOW" "$RESET" "$*"; }
+err(){ printf '%s[ ERROR ]%s %s\n' "$RED" "$RESET" "$*" >&2; }
+die(){ err "$*"; exit 1; }
+
+get_user(){ whoami; }
+
+get_ssh_port(){
+  # prefer configured port, else whatever sshd_config says, else default
+  if [ -n "$(cat "$CONF_FILE" 2>/dev/null | sed -n 's/^port=//p')" ]; then
+    sed -n 's/^port=//p' "$CONF_FILE"
+  elif pgrep -x sshd >/dev/null 2>&1 && [ -f "$PREFIX/etc/ssh/sshd_config" ]; then
+    local p; p=$(sed -n 's/^[[:space:]]*Port[[:space:]]*//p' "$PREFIX/etc/ssh/sshd_config" 2>/dev/null | tail -1)
+    echo "${p:-$DEFAULT_PORT}"
+  else
+    echo "$DEFAULT_PORT"
+  fi
+}
+
+get_lan_ips(){
+  # collect IPv4 addresses of this device
+  { ip -4 addr show 2>/dev/null | sed -n 's/.*inet \([0-9.]*\)\/.*/\1/p';
+    ifconfig 2>/dev/null | sed -n 's/.*inet \([0-9.]*\) .*/\1/p'; } \
+    | grep -vE '^(127\.|192\.0\.0\.)' | sort -u
+}
+
+ssh_running(){ pgrep -x sshd >/dev/null 2>&1; }
+
+# ---------- config persistence ----------------------------------------------
+load_config(){
+  [ -f "$CONF_FILE" ] || return 0
+  while IFS='=' read -r k v; do
+    [ -n "$k" ] && eval "$k='$v'"
+  done < "$CONF_FILE"
+}
+save_config(){
+  mkdir -p "$TMXSSH_HOME"
+  : > "$CONF_FILE"
+  echo "port=$SSH_PORT" >> "$CONF_FILE"
+  chmod 600 "$CONF_FILE"
+}
+
+# ---------- core actions ----------------------------------------------------
+requires_openssh(){
+  if ! command -v sshd >/dev/null 2>&1; then
+    say "  -> installing openssh (needed to run the SSH server)..."
+    pkg install -y openssh >/dev/null 2>&1 || {
+      apt install -y openssh >/dev/null 2>&1 || die "could not install openssh. run: pkg install openssh"
+    }
+  fi
+  command -v sshd >/dev/null 2>&1 || die "sshd still not available after install"
+}
+
+write_sshd_config_port(){
+  local conf="$PREFIX/etc/ssh/sshd_config"
+  [ -f "$conf" ] || return 0
+  grep -q "^[[:space:]]*Port" "$conf" \
+    && sed -i "s/^[[:space:]]*Port.*/Port $SSH_PORT/" "$conf" \
+    || printf '\nPort %s\n' "$SSH_PORT" >> "$conf"
+}
+
+ensure_key(){
+  if [ ! -f "$HOME/.ssh/id_ed25519" ]; then
+    mkdir -p "$HOME/.ssh"; chmod 700 "$HOME/.ssh"
+    ssh-keygen -q -t ed25519 -N "" -f "$HOME/.ssh/id_ed25519" >/dev/null 2>&1 \
+      && say "  -> generated an SSH key pair for this device"
+  fi
+}
+
+ensure_password(){
+  # ensure login password exists (Termux ships with NO user password)
+  if ! grep -q "^$(get_user):" "$PREFIX/etc/passwd" 2>/dev/null && [ ! -s "$PREFIX/var/termux/termux-account"* ]; then
+    : # fall through: passwd always lets you set one
+  fi
+  # detect an empty/unset password: try sshd's check by seeing if ANY login works
+  # Simpler + reliable: just always ensure a password is set on first run.
+  local pw_check="$TMXSSH_HOME/.pwset"
+  if [ ! -f "$pw_check" ]; then
+    say ""
+    say "  Your Termux has no SSH login password yet."
+    say "  Set one now (used by other devices to log in)."
+    say ""
+    passwd || die "password setup cancelled"
+    touch "$pw_check"
+    ok "SSH login password set"
+  fi
+}
+
+cmd_start(){
+  requires_openssh
+  ensure_key
+
+  load_config
+  SSH_PORT="${SSH_PORT:-$DEFAULT_PORT}"
+  write_sshd_config_port
+  save_config
+
+  # make sure .ssh perms are right
+  chmod 700 "$HOME/.ssh" 2>/dev/null
+  [ -f "$HOME/.ssh/authorized_keys" ] && chmod 600 "$HOME/.ssh/authorized_keys" 2>/dev/null
+
+  if ssh_running; then
+    warn "sshd is already running"
+  else
+    pkill -x sshd 2>/dev/null
+    sshd 2>/dev/null
+    sleep 1
+    ssh_running && ok "SSH server started (background)" || die "failed to start sshd"
+  fi
+  cmd_info
+}
+
+cmd_stop(){
+  if ssh_running; then
+    pkill -x sshd; sleep 1
+    ssh_running && err "could not stop sshd" || ok "SSH server stopped"
+  else
+    warn "sshd is not running"
+  fi
+}
+
+cmd_status(){
+  load_config
+  SSH_PORT="${SSH_PORT:-$DEFAULT_PORT}"
+  echo "┌───────────────────────────────────────────────"
+  echo "│  tmxssh status"
+  echo "├───────────────────────────────────────────────"
+  if ssh_running; then
+    printf '│  Server   : %sRUNNING%s\n' "$GREEN" "$RESET"
+    printf '│  Port     : %s\n' "$(get_ssh_port)"
+  else
+    printf '│  Server   : %sSTOPPED%s  (run: tmxssh start)\n' "$RED" "$RESET"
+  fi
+  printf '│  User     : %s\n' "$(get_user)"
+  printf '│  Key file : %s\n' "$HOME/.ssh/id_ed25519.pub"
+  echo "└───────────────────────────────────────────────"
+}
+
+cmd_info(){
+  load_config
+  SSH_PORT="${SSH_PORT:-$DEFAULT_PORT}"
+  local user; user="$(get_user)"
+
+  echo ""
+  echo "  ${BOLD}ssh is ready — connect from another device with:${RESET}"
+  echo ""
+  local ip
+  for ip in $(get_lan_ips); do
+    echo "    ${GREEN}ssh -p $SSH_PORT $user@$ip${RESET}"
+  done
+  [ -z "$(get_lan_ips)" ] && {
+    echo "    ${YELLOW}(could not auto-detect your LAN IP — find it with: ip addr)${RESET}"
+  }
+  echo ""
+  echo "  ${DIM}password : the one you set with 'tmxssh setpass'${RESET}"
+  echo "  ${DIM}more     : tmxssh help${RESET}"
+  echo ""
+}
+
+cmd_setpass(){
+  say "  Set a new SSH login password for user '$(get_user)':"
+  passwd || die "password change cancelled/failed"
+  touch "$TMXSSH_HOME/.pwset"
+  ok "SSH login password updated"
+}
+
+cmd_port(){
+  [ -n "$1" ] || die "usage: tmxssh port <NUMBER>"
+  case "$1" in
+    *[!0-9]*) die "port must be a number";;
+  esac
+  [ "$1" -ge 1 ] && [ "$1" -le 65535 ] || die "port out of range (1-65535)"
+  load_config; SSH_PORT="$1"; save_config
+  write_sshd_config_port
+  ok "SSH port set to $1"
+  if ssh_running; then
+    warn "restart to apply: tmxssh restart"
+  fi
+}
+
+cmd_noargs(){
+  load_config
+  SSH_PORT="${SSH_PORT:-$DEFAULT_PORT}"
+  if [ ! -f "$TMXSSH_HOME/.pwset" ]; then
+    say "  ${CYAN}== tmxssh first-run setup ==${RESET}"
+    ensure_password
+  fi
+  if ! ssh_running; then
+    requires_openssh; ensure_key
+    write_sshd_config_port; save_config
+    pkill -x sshd 2>/dev/null
+    sshd 2>/dev/null; sleep 1
+  fi
+  cmd_info
+}
+
+cmd_qr(){
+  load_config
+  SSH_PORT="${SSH_PORT:-$DEFAULT_PORT}"
+  local user; user="$(get_user)"
+  local ip; ip="$(get_lan_ips | head -1)"
+  [ -n "$ip" ] || die "could not detect LAN IP"
+  local conn="ssh -p $SSH_PORT $user@$ip"
+  say "  Scan this with any phone camera / QR reader to get the connect command:"
+  echo ""
+  if command -v qrencode >/dev/null 2>&1; then
+    echo "$conn" | qrencode -t ANSI 2>/dev/null \
+      || echo "$conn" | qrencode -t ANSI256 2>/dev/null \
+      || { say "$conn"; warn "install qrencode for a QR code: pkg install qrencode"; }
+  elif command -v python >/dev/null 2>&1 && python -c "import qrcode" 2>/dev/null; then
+    python - "$conn" <<'PY'
+import sys, qrcode
+q = qrcode.QRCode()
+q.add_data(sys.argv[1]); q.make()
+q.print_ascii(invert=True)
+PY
+  else
+    say "  $conn"
+    warn "install 'qrencode' (pkg install qrencode) to show a scannable QR code."
+  fi
+  echo ""
+}
+
+cmd_help(){
+  sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
+  echo ""
+  echo "  Commands:"
+  echo "    tmxssh            auto-start (if needed) + show connect info"
+  echo "    tmxssh start      start sshd in background + show info"
+  echo "    tmxssh stop       stop sshd"
+  echo "    tmxssh status     show running state"
+  echo "    tmxssh info       show IP/port/user to connect with"
+  echo "    tmxssh setpass    set/change SSH login password"
+  echo "    tmxssh port N     change SSH port (default 8022)"
+  echo "    tmxssh restart    restart sshd"
+}
+
+cmd_restart(){
+  cmd_stop
+  sleep 1
+  cmd_start
+}
+
+# ---------- entry point ------------------------------------------------------
+PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
+
+case "${1:-}" in
+  start)   cmd_start ;;
+  stop)    cmd_stop ;;
+  status)  cmd_status ;;
+  info)    cmd_info ;;
+  setpass) cmd_setpass ;;
+  qr)      cmd_qr ;;
+  port)    cmd_port "$2" ;;
+  restart) cmd_restart ;;
+  help|-h|--help) cmd_help ;;
+  *)       cmd_noargs ;;
+esac
