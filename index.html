@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>tmxssh — One-Command SSH Server for Termux (Android) | @daemon-018</title>
+  <meta name="description" content="tmxssh is a free, open-source one-command tool that starts an OpenSSH server on Termux (Android) so laptops, phones and tablets can SSH into your device over LAN. Auto-installs openssh, guides password setup, prints the exact ssh command and QR code. Install with one curl command.">
+  <meta name="keywords" content="tmxssh, termux ssh, termux ssh server, ssh into android, openssh android, termux remote access, ssh server termux, android ssh server, daemon-018, termux tools, ssh lan">
+  <meta name="author" content="Hari (Daemon-018)">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://daemon-018.github.io/tmxssh/">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="tmxssh — One-Command SSH Server for Termux">
+  <meta property="og:description" content="Start an OpenSSH server on Termux with one command. Laptops, phones & tablets SSH in over LAN. Free & open source.">
+  <meta property="og:url" content="https://daemon-018.github.io/tmxssh/">
+  <meta property="og:site_name" content="tmxssh">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="tmxssh — One-Command SSH Server for Termux">
+  <meta name="twitter:description" content="Start OpenSSH on Termux with one command. Others SSH in over LAN. Free & open source.">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "tmxssh",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "Android (Termux), Linux",
+    "url": "https://github.com/Daemon-018/tmxssh",
+    "description": "One-command OpenSSH server starter for Termux. Starts sshd in the background so laptops, phones and tablets can SSH into your Android device over a local network.",
+    "author": { "@type": "Person", "name": "Hari", "alternateName": "Daemon-018", "url": "https://github.com/Daemon-018" },
+    "license": "https://opensource.org/licenses/MIT",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+  }
+  </script>
+  <style>
+    :root{ --bg:#0a0e14; --panel:#0f1520; --green:#00ff9d; --cyan:#00d4ff; --pink:#ff3bd4; --dim:#6b7a90; --text:#d7e0ee; --amber:#ffd75f; }
+    *{ box-sizing:border-box; margin:0; padding:0; }
+    body{ background:var(--bg); color:var(--text); font-family:'JetBrains Mono',ui-monospace,monospace; line-height:1.6; min-height:100vh; }
+    .wrap{ max-width:860px; margin:0 auto; padding:2rem 1.25rem 4rem; }
+    header{ text-align:center; padding:2rem 0 1.5rem; }
+    .logo{ font-size:2.4rem; font-weight:700; letter-spacing:.5px; color:var(--green); text-shadow:0 0 18px rgba(0,255,157,.45); }
+    .tag{ color:var(--cyan); margin-top:.4rem; font-size:.95rem; }
+    .author{ color:var(--pink); margin-top:.35rem; font-size:.85rem; }
+    .cmd{ background:var(--panel); border:1px solid #1d2636; border-left:3px solid var(--green); padding:.9rem 1rem; margin:1rem 0; overflow-x:auto; border-radius:6px; }
+    .cmd code{ color:var(--green); font-size:.9rem; word-break:break-all; }
+    .prompt::before{ content:"$ "; color:var(--pink); }
+    .sr{ font-size:.75rem; color:var(--green); }
+    section{ margin:2.2rem 0; }
+    h2{ color:var(--green); font-size:1.15rem; margin-bottom:1rem; border-bottom:1px solid #1d2636; padding-bottom:.5rem; }
+    h2 span{ color:var(--cyan); }
+    p{ color:var(--text); margin-bottom:.75rem; }
+    ul{ list-style:none; padding:0; }
+    li{ padding:.4rem 0; color:var(--text); }
+    li::before{ content:"▸ "; color:var(--cyan); }
+    table{ width:100%; border-collapse:collapse; margin-top:.5rem; font-size:.85rem; }
+    th,td{ text-align:left; padding:.5rem .6rem; border-bottom:1px solid #1d2636; }
+    th{ color:var(--green); font-weight:600; }
+    td code{ color:var(--cyan); }
+    .btn{ display:inline-block; background:var(--green); color:#03110a; font-weight:700; padding:.6rem 1.1rem; border-radius:6px; text-decoration:none; margin:.5rem .5rem 0 0; }
+    .btn.alt{ background:transparent; border:1px solid var(--cyan); color:var(--cyan); }
+    .footer{ text-align:center; color:var(--dim); margin-top:3rem; font-size:.8rem; border-top:1px solid #1d2636; padding-top:1.5rem; }
+    .footer a{ color:var(--cyan); text-decoration:none; }
+    @media(max-width:640px){ .logo{ font-size:1.7rem; } .cmd code{ font-size:.78rem; } }
+  </style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="logo">tmxssh</div>
+    <div class="tag">// one-command SSH server for Termux (Android)</div>
+    <div class="author">crafted by <a href="https://github.com/Daemon-018" style="color:var(--pink)">@daemon-018</a> · MIT · free &amp; open source</div>
+  </header>
+
+  <div class="cmd"><code class="prompt">curl -fsSL https://raw.githubusercontent.com/Daemon-018/tmxssh/refs/heads/main/install.sh | bash</code></div>
+
+  <section>
+    <h2><span>01.</span> what is tmxssh?</h2>
+    <p><strong>tmxssh</strong> is a free, open-source tool that starts an <strong>OpenSSH server on Termux (Android)</strong> in the background. In one step it turns your Android device into an SSH host, so <strong>laptops, other phones and tablets</strong> on the same network can SSH in and access your terminal.</p>
+    <p>No complex config. Just install and type <strong>tmxssh</strong> — it auto-installs openssh, guides you through setting a login password, and prints the exact command the other device needs to connect.</p>
+  </section>
+
+  <section>
+    <h2><span>02.</span> why use tmxssh?</h2>
+    <ul>
+      <li><strong>One command install</strong> — lands straight into your system path.</li>
+      <li><strong>Auto-starts sshd</strong> in the background, no config files to edit.</li>
+      <li><strong>Auto-installs openssh</strong> when it's missing.</li>
+      <li><strong>Guided password setup</strong> on first run — Termux ships with no login password.</li>
+      <li><strong>Prints your connect info</strong> — IP, port and user, ready to copy.</li>
+      <li><strong>Scannable QR code</strong> — point another phone at it to grab the ssh command.</li>
+      <li><strong>Change port &amp; reset password</strong> anytime with simple subcommands.</li>
+      <li><strong>LAN only, no cloud</strong> — devices connect directly over your local network.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2><span>03.</span> quick start</h2>
+    <div class="cmd"><code class="prompt">tmxssh</code></div>
+    <p>That's it. On other devices over the same network:</p>
+    <div class="cmd"><code class="prompt">ssh -p 8022 user@192.168.1.x</code></div>
+  </section>
+
+  <section>
+    <h2><span>04.</span> commands</h2>
+    <table>
+      <tr><th>Command</th><th>What it does</th></tr>
+      <tr><td><code>tmxssh</code></td><td>auto-start (if needed) + show connect info</td></tr>
+      <tr><td><code>tmxssh start</code></td><td>start sshd in the background</td></tr>
+      <tr><td><code>tmxssh stop</code></td><td>stop sshd</td></tr>
+      <tr><td><code>tmxssh restart</code></td><td>restart sshd</td></tr>
+      <tr><td><code>tmxssh status</code></td><td>show running state</td></tr>
+      <tr><td><code>tmxssh info</code></td><td>show IP / port / user</td></tr>
+      <tr><td><code>tmxssh setpass</code></td><td>set or change SSH login password</td></tr>
+      <tr><td><code>tmxssh port N</code></td><td>change SSH port (default 8022)</td></tr>
+      <tr><td><code>tmxssh qr</code></td><td>show a scannable QR connect code</td></tr>
+    </table>
+  </section>
+
+  <section>
+    <h2><span>05.</span> install</h2>
+    <div class="cmd"><code class="prompt">curl -fsSL https://raw.githubusercontent.com/Daemon-018/tmxssh/refs/heads/main/install.sh | bash</code></div>
+    <p>Then run <strong>tmxssh</strong> to start your SSH server.</p>
+    <p><span class="sr">// GitHub repo &amp; docs</span></p>
+    <p><a class="btn" href="https://github.com/Daemon-018/tmxssh">View on GitHub</a> <a class="btn alt" href="https://github.com/Daemon-018/tmxssh#readme">README</a></p>
+  </section>
+
+  <footer class="footer">
+    <p>tmxssh · free &amp; open source (MIT) · <a href="https://github.com/Daemon-018/tmxssh">github.com/Daemon-018/tmxssh</a></p>
+    <p>crafted by <a href="https://github.com/Daemon-018">@daemon-018</a> — Termux, cybersecurity &amp; open source</p>
+  </footer>
+
+</div>
+</body>
+</html>
