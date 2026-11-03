@@ -1,6 +1,7 @@
 # tmxssh — One-Command SSH Server for Termux (Android)
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![CI](https://github.com/Daemon-018/tmxssh/actions/workflows/ci.yml/badge.svg)](https://github.com/Daemon-018/tmxssh/actions/workflows/ci.yml)
 [![Termux](https://img.shields.io/badge/platform-Termux%20(Android)-00897b.svg)](https://termux.com)
 [![Shell](https://img.shields.io/badge/shell-bash-black.svg)](https://www.gnu.org/software/bash/)
 
@@ -79,6 +80,7 @@ and you're in.
 | `tmxssh setpass`      | set or change the SSH login password           |
 | `tmxssh port N`       | change the SSH port (default **8022**)         |
 | `tmxssh qr`           | show a scannable QR connect code               |
+| `tmxssh version`      | show the installed version                     |
 | `tmxssh help`         | show help                                      |
 
 ---
@@ -150,6 +152,38 @@ pkill sshd                   # stop the server if running
 ```
 
 Config is stored in `~/.tmxssh/` — delete that too if you want a clean slate.
+
+---
+
+## Development
+
+The script is a single bash file with no runtime dependencies beyond Termux's
+own tools. Tests use [bats-core](https://github.com/bats-core/bats-core) and
+linting uses [ShellCheck](https://www.shellcheck.net/).
+
+```bash
+# Debian / Ubuntu
+sudo apt-get install -y bats shellcheck
+
+# Termux
+pkg install -y bats shellcheck   # or: npm i -g bats
+
+bash -n tmxssh && bash -n install.sh
+shellcheck -x tmxssh install.sh
+bats tests/
+```
+
+CI runs syntax checks, ShellCheck, and the full bats suite on every push and
+pull request. Pushing a tag like `v1.1.0` builds a `.tar.gz` + SHA-256 checksum
+and publishes a GitHub release.
+
+### Safety notes
+
+- The config file (`~/.tmxssh/config`) is parsed with a **key allow-list** and
+  validated values — it is never `eval`'d, so a tampered file cannot run code.
+- The config is written with `0600` permissions.
+- The script only auto-runs when executed directly; sourcing it (as the tests
+  do) defines functions without starting anything.
 
 ---
 

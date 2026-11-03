@@ -15,17 +15,19 @@
 #           tmxssh port N     -> set SSH server port (default 8022)
 #           tmxssh info       -> show connection details (IP/port/user)
 #           tmxssh qr         -> show a QR code with the full ssh command
+#           tmxssh version    -> show the version
 #           tmxssh help       -> this help
 # =============================================================================
 
 # ---------- config -----------------------------------------------------------
+TMXSSH_VERSION="1.1.0"
 TMXSSH_HOME="${TMXSSH_HOME:-$HOME/.tmxssh}"
 CONF_FILE="$TMXSSH_HOME/config"
 DEFAULT_PORT=8022
+PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
 
 # ---------- cyberpunk theme --------------------------------------------------
 C_RESET=$'\033[0m'
-C_BOLD=$'\033[1m'
 C_DIM=$'\033[2m'
 C_GREEN=$'\033[38;5;48m'     # neon green  #00ff9f
 C_CYAN=$'\033[38;5;51m'      # cyber cyan  #00e5ff
@@ -33,12 +35,6 @@ C_PINK=$'\033[38;5;206m'     # synth pink  #ff3bd4
 C_AMBER=$'\033[38;5;227m'    # amber       #ffd75f
 C_RED=$'\033[38;5;203m'      # volt red    #ff5f5f
 C_PURPLE=$'\033[38;5;141m'   # neon purple #af87ff
-C_BG=$'\033[48;5;235m'       # dark slab   #262626
-C_GREEN_BG=$'\033[48;5;28m'  # green fill
-C_MAGENTA=$'\033[95m'
-
-BOLD="$C_BOLD"; DIM="$C_DIM"; GREEN="$C_GREEN"; YELLOW="$C_AMBER"
-RED="$C_RED"; CYAN="$C_CYAN"; RESET="$C_RESET"
 
 # ---------- helpers ----------------------------------------------------------
 say(){ printf '%s\n' "$*"; }
@@ -78,7 +74,7 @@ banner(){
   printf '%s%s%s\n' "$C_GREEN" "$(pad "$p")"    "       ██║   ██║╚██╔╝██║ ██╔██╗ ╚════██║╚════██║██╔══██║"
   printf '%s%s%s\n' "$C_GREEN" "$(pad "$p")"    "       ██║   ██║ ╚═╝ ██║██╔╝ ██╗███████║███████║██║  ██║"
   printf '%s%s%s\n' "$C_GREEN" "$(pad "$p")"    "       ╚═╝   ╚═╝     ╚═╝╚═╝  ╚═╝╚══════╝╚══════╝╚═╝  ╚═╝"
-  printf '%s%s%s%s%s\n' "$C_DIM" "$(pad "$p2")" ":: OPENSSH NEON SERVER v1.0 ::" "$C_RESET" "  $C_PURPLE@daemon-018$C_RESET"
+  printf '%s%s%s%s%s\n' "$C_DIM" "$(pad "$p2")" ":: OPENSSH NEON SERVER v$TMXSSH_VERSION ::" "$C_RESET" "  $C_PURPLE@daemon-018$C_RESET"
   echo ""
 }
 
@@ -86,14 +82,16 @@ get_user(){ whoami; }
 
 get_ssh_port(){
   # prefer configured port, else whatever sshd_config says, else default
-  if [ -n "$(cat "$CONF_FILE" 2>/dev/null | sed -n 's/^port=//p')" ]; then
-    sed -n 's/^port=//p' "$CONF_FILE"
-  elif pgrep -x sshd >/dev/null 2>&1 && [ -f "$PREFIX/etc/ssh/sshd_config" ]; then
-    local p; p=$(sed -n 's/^[[:space:]]*Port[[:space:]]*//p' "$PREFIX/etc/ssh/sshd_config" 2>/dev/null | tail -1)
-    echo "${p:-$DEFAULT_PORT}"
-  else
-    echo "$DEFAULT_PORT"
+  local p=""
+  if [ -r "$CONF_FILE" ]; then
+    p=$(sed -n 's/^port=//p' "$CONF_FILE" 2>/dev/null | tail -n 1)
   fi
+  case "$p" in ''|*[!0-9]*) p="" ;; esac
+  if [ -z "$p" ] && [ -f "$PREFIX/etc/ssh/sshd_config" ]; then
+    p=$(sed -n 's/^[[:space:]]*Port[[:space:]]*//p' "$PREFIX/etc/ssh/sshd_config" 2>/dev/null | tail -n 1)
+    case "$p" in ''|*[!0-9]*) p="" ;; esac
+  fi
+  echo "${p:-$DEFAULT_PORT}"
 }
 
 get_lan_ips(){
@@ -106,26 +104,56 @@ get_lan_ips(){
 ssh_running(){ pgrep -x sshd >/dev/null 2>&1; }
 
 # ---------- config persistence ----------------------------------------------
+# Only a known allow-list of keys is ever read. Values are validated, never
+# evaluated, so a tampered config file cannot execute commands.
 load_config(){
-  [ -f "$CONF_FILE" ] || return 0
-  while IFS='=' read -r k v; do
-    [ -n "$k" ] && eval "$k='$v'"
+  [ -r "$CONF_FILE" ] || return 0
+  local k v n
+  while IFS='=' read -r k v || [ -n "$k" ]; do
+    v="${v%$'\r'}"
+    case "$k" in
+      ''|\#*) continue ;;          # blank line or comment
+      port)
+        case "$v" in
+          ''|*[!0-9]*)
+            warn "ignoring invalid port in $CONF_FILE: '$v'" ;;
+          *)
+            if [ "${#v}" -gt 5 ]; then
+              warn "ignoring out-of-range port in $CONF_FILE: $v"
+            else
+              n=$((10#$v))
+              if [ "$n" -ge 1 ] && [ "$n" -le 65535 ]; then
+                SSH_PORT="$n"
+              else
+                warn "ignoring out-of-range port in $CONF_FILE: $v"
+              fi
+            fi ;;
+        esac ;;
+      *) : ;;                      # unknown keys are ignored (no eval)
+    esac
   done < "$CONF_FILE"
 }
 save_config(){
-  mkdir -p "$TMXSSH_HOME"
-  : > "$CONF_FILE"
-  echo "port=$SSH_PORT" >> "$CONF_FILE"
-  chmod 600 "$CONF_FILE"
+  SSH_PORT="${SSH_PORT:-$DEFAULT_PORT}"
+  mkdir -p "$TMXSSH_HOME" || die "cannot create $TMXSSH_HOME"
+  ( umask 077; printf 'port=%s\n' "$SSH_PORT" > "$CONF_FILE" ) \
+    || die "cannot write $CONF_FILE"
+  chmod 600 "$CONF_FILE" 2>/dev/null
 }
 
 # ---------- core actions ----------------------------------------------------
 requires_openssh(){
   if ! command -v sshd >/dev/null 2>&1; then
     say "  -> installing openssh (needed to run the SSH server)..."
-    pkg install -y openssh >/dev/null 2>&1 || {
-      apt install -y openssh >/dev/null 2>&1 || die "could not install openssh. run: pkg install openssh"
-    }
+    if command -v pkg >/dev/null 2>&1; then
+      pkg install -y openssh >/dev/null 2>&1 \
+        || die "could not install openssh. run: pkg install openssh"
+    elif command -v apt >/dev/null 2>&1; then
+      apt install -y openssh-server >/dev/null 2>&1 \
+        || die "could not install openssh-server. run it with sudo, then retry"
+    else
+      die "sshd is missing. install openssh-server with your package manager"
+    fi
   fi
   command -v sshd >/dev/null 2>&1 || die "sshd still not available after install"
 }
@@ -147,22 +175,18 @@ ensure_key(){
 }
 
 ensure_password(){
-  # ensure login password exists (Termux ships with NO user password)
-  if ! grep -q "^$(get_user):" "$PREFIX/etc/passwd" 2>/dev/null && [ ! -s "$PREFIX/var/termux/termux-account"* ]; then
-    : # fall through: passwd always lets you set one
-  fi
-  # detect an empty/unset password: try sshd's check by seeing if ANY login works
-  # Simpler + reliable: just always ensure a password is set on first run.
-  local pw_check="$TMXSSH_HOME/.pwset"
-  if [ ! -f "$pw_check" ]; then
-    say ""
-    say "  Your Termux has no SSH login password yet."
-    say "  Set one now (used by other devices to log in)."
-    say ""
-    passwd || die "password setup cancelled"
-    touch "$pw_check"
-    ok "SSH login password set"
-  fi
+  # Termux ships with no login password; set one on first run.
+  local marker="$TMXSSH_HOME/.pwset"
+  [ -f "$marker" ] && return 0
+
+  mkdir -p "$TMXSSH_HOME"
+  say ""
+  say "  Your Termux has no SSH login password yet."
+  say "  Set one now (used by other devices to log in)."
+  say ""
+  passwd || die "password setup cancelled"
+  ( umask 077; : > "$marker" )
+  ok "SSH login password set"
 }
 
 cmd_start(){
@@ -185,7 +209,11 @@ cmd_start(){
     pkill -x sshd 2>/dev/null
     sshd 2>/dev/null
     sleep 1
-    ssh_running && ok "SSH server started (background)" || die "failed to start sshd"
+    if ssh_running; then
+      ok "SSH server started (background)"
+    else
+      die "failed to start sshd"
+    fi
   fi
   cmd_info
 }
@@ -193,7 +221,11 @@ cmd_start(){
 cmd_stop(){
   if ssh_running; then
     pkill -x sshd; sleep 1
-    ssh_running && err "could not stop sshd" || ok "SSH server stopped"
+    if ssh_running; then
+      err "could not stop sshd"
+    else
+      ok "SSH server stopped"
+    fi
   else
     warn "sshd is not running"
   fi
@@ -225,23 +257,24 @@ cmd_info(){
   echo ""
   printf '%s[ ACCESS GRANTED ]%s  connect from another device:\n' "$C_GREEN" "$C_RESET"
   echo ""
-  local ip
-  for ip in $(get_lan_ips); do
+  local ip ips; ips="$(get_lan_ips)"
+  for ip in $ips; do
     printf '    %s$%s %s%s -p %s %s@%s%s\n' "$C_PINK" "$C_RESET" "$C_CYAN" "ssh" "$SSH_PORT" "$user" "$ip" "$C_RESET"
   done
-  [ -z "$(get_lan_ips)" ] && {
+  [ -z "$ips" ] && {
     printf '    %s(no LAN IP detected — run: ip addr)%s\n' "$C_AMBER" "$C_RESET"
   }
   echo ""
-  printf '%s  password   :%s the one set with `tmxssh setpass`\n' "$C_DIM" "$C_RESET"
+  printf '%s  password   :%s the one set with tmxssh setpass\n' "$C_DIM" "$C_RESET"
   printf '%s  hints      :%s tmxssh help%s · %s@daemon-018%s\n' "$C_DIM" "$C_RESET" "$C_CYAN" "$C_PURPLE" "$C_RESET"
   echo ""
 }
 
 cmd_setpass(){
+  mkdir -p "$TMXSSH_HOME"
   say "  Set a new SSH login password for user '$(get_user)':"
   passwd || die "password change cancelled/failed"
-  touch "$TMXSSH_HOME/.pwset"
+  ( umask 077; : > "$TMXSSH_HOME/.pwset" )
   ok "SSH login password updated"
 }
 
@@ -250,10 +283,16 @@ cmd_port(){
   case "$1" in
     *[!0-9]*) die "port must be a number";;
   esac
-  [ "$1" -ge 1 ] && [ "$1" -le 65535 ] || die "port out of range (1-65535)"
-  load_config; SSH_PORT="$1"; save_config
+  if [ "${#1}" -gt 5 ]; then
+    die "port out of range (1-65535)"
+  fi
+  local n=$((10#$1))
+  if [ "$n" -lt 1 ] || [ "$n" -gt 65535 ]; then
+    die "port out of range (1-65535)"
+  fi
+  load_config; SSH_PORT="$n"; save_config
   write_sshd_config_port
-  ok "SSH port set to $1"
+  ok "SSH port set to $n"
   if ssh_running; then
     warn "restart to apply: tmxssh restart"
   fi
@@ -264,7 +303,7 @@ cmd_noargs(){
   SSH_PORT="${SSH_PORT:-$DEFAULT_PORT}"
   banner
   if [ ! -f "$TMXSSH_HOME/.pwset" ]; then
-    say "  ${CYAN}== tmxssh first-run setup ==${RESET}"
+    say "  ${C_CYAN}== tmxssh first-run setup ==${C_RESET}"
     ensure_password
   fi
   if ! ssh_running; then
@@ -289,8 +328,8 @@ cmd_qr(){
     echo "$conn" | qrencode -t ANSI 2>/dev/null \
       || echo "$conn" | qrencode -t ANSI256 2>/dev/null \
       || { say "$conn"; warn "install qrencode for a QR code: pkg install qrencode"; }
-  elif command -v python >/dev/null 2>&1 && python -c "import qrcode" 2>/dev/null; then
-    python - "$conn" <<'PY'
+  elif command -v python3 >/dev/null 2>&1 && python3 -c "import qrcode" 2>/dev/null; then
+    python3 - "$conn" <<'PY'
 import sys, qrcode
 q = qrcode.QRCode()
 q.add_data(sys.argv[1]); q.make()
@@ -317,10 +356,15 @@ cmd_help(){
   printf '  %s%-12s%s  %sset/change SSH login password%s\n' "$C_PINK" 'tmxssh setpass' "$C_RESET" "$C_RESET" ""
   printf '  %s%-12s%s  %schange SSH port (default 8022)%s\n' "$C_PINK" 'tmxssh port N' "$C_RESET" "$C_RESET" ""
   printf '  %s%-12s%s  %sshow scannable QR connect code%s\n' "$C_PINK" 'tmxssh qr' "$C_RESET" "$C_RESET" ""
+  printf '  %s%-12s%s  %sshow version%s\n' "$C_PINK" 'tmxssh version' "$C_RESET" "$C_RESET" ""
   printf '  %s%-12s%s  %sshow this help%s\n' "$C_PINK" 'tmxssh help' "$C_RESET" "$C_RESET" ""
   hrule
   printf '%s  crafted by %s@daemon-018%s · %shttps://github.com/Daemon-018/tmxssh%s\n' "$C_DIM" "$C_PURPLE" "$C_DIM" "$C_CYAN" "$C_RESET"
   hrule
+}
+
+cmd_version(){
+  printf '%s%s%s\n' "$C_GREEN" "tmxssh $TMXSSH_VERSION" "$C_RESET"
 }
 
 cmd_restart(){
@@ -330,17 +374,23 @@ cmd_restart(){
 }
 
 # ---------- entry point ------------------------------------------------------
-PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
+main(){
+  case "${1:-}" in
+    start)   cmd_start ;;
+    stop)    cmd_stop ;;
+    status)  cmd_status ;;
+    info)    cmd_info ;;
+    setpass) cmd_setpass ;;
+    qr)      cmd_qr ;;
+    port)    cmd_port "$2" ;;
+    restart) cmd_restart ;;
+    version|--version|-v) cmd_version ;;
+    help|-h|--help) cmd_help ;;
+    *)       cmd_noargs ;;
+  esac
+}
 
-case "${1:-}" in
-  start)   cmd_start ;;
-  stop)    cmd_stop ;;
-  status)  cmd_status ;;
-  info)    cmd_info ;;
-  setpass) cmd_setpass ;;
-  qr)      cmd_qr ;;
-  port)    cmd_port "$2" ;;
-  restart) cmd_restart ;;
-  help|-h|--help) cmd_help ;;
-  *)       cmd_noargs ;;
-esac
+# Only run when executed, not when sourced (lets tests load the functions).
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  main "$@"
+fi

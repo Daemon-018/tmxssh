@@ -21,7 +21,7 @@ die(){ err "$*"; exit 1; }
 
 # ---------- detect target platform ------------------------------------------
 PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
-if [ -d "$PREFIX/bin" ] && [ -n "$(echo "$PREFIX" | grep -i termux)" ]; then
+if [ -d "$PREFIX/bin" ] && echo "$PREFIX" | grep -qi termux; then
   IS_TERMUX=1
   DEST="$PREFIX/bin/tmxssh"
 else
@@ -63,8 +63,11 @@ ok "installed to $DEST"
 if [ "$IS_TERMUX" = "1" ]; then
   if ! command -v sshd >/dev/null 2>&1; then
     say "  -> installing openssh..."
-    pkg install -y openssh >/dev/null 2>&1 \
-      && ok "openssh installed" || warn "run 'pkg install openssh' manually"
+    if pkg install -y openssh >/dev/null 2>&1; then
+      ok "openssh installed"
+    else
+      warn "run 'pkg install openssh' manually"
+    fi
   else
     ok "openssh already present"
   fi
